@@ -55,9 +55,10 @@ func (c *UserController) Login(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
+			"id":              user.ID,
+			"username":        user.Username,
+			"email":           user.Email,
+			"profile_picture": string(user.ProfilePicture),
 		},
 	})
 }
