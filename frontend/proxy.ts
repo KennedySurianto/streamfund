@@ -7,13 +7,14 @@ export function proxy(request: NextRequest) {
 
   const isLoginPage = pathname === '/login';
   const isRegisterPage = pathname === '/register';
+  const isOverlayPage = pathname.startsWith('/overlay');
 
   // ❌ Not authenticated → redirect to /login
-  if (!token && !isLoginPage && !isRegisterPage) {
+  if (!token && !isLoginPage && !isRegisterPage && !isOverlayPage) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // ❌ Already authenticated → prevent accessing /login
+  // ❌ Already authenticated → prevent accessing auth pages
   if (token && (isLoginPage || isRegisterPage)) {
     return NextResponse.redirect(new URL('/', request.url));
   }

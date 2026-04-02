@@ -10,42 +10,85 @@ interface OverlayProps {
 export default function OverlayPage({ params }: OverlayProps) {
   const { username } = use(params);
   const [activeDonation, setActiveDonation] = useState<Donation | null>(null);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+
+  // A trick to unlock audio context. In OBS, browser sources usually allow autoplay,
+  // but if testing in a regular browser, you might need to click the screen once.
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (!audioUnlocked && window.speechSynthesis) {
+        const silentUtterance = new SpeechSynthesisUtterance("");
+        window.speechSynthesis.speak(silentUtterance);
+        setAudioUnlocked(true);
+      }
+    };
+
+    window.addEventListener("click", unlockAudio);
+    return () => window.removeEventListener("click", unlockAudio);
+  }, [audioUnlocked]);
 
   const triggerTTS = (donation: Donation) => {
-    if (!window.speechSynthesis) return;
+    const ttsText = `${donation.sender_name} berdonasi ${donation.amount} rupiah. Pesannya: ${donation.message}`;
+    const encodedText = encodeURIComponent(ttsText);
 
-    const text = `${donation.sender_name} donated Rp ${donation.amount.toLocaleString('id-ID')}. ${donation.message}`;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'id-ID'; // Set to Indonesian
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
+    // Swap to the 'gtx' client endpoint, which strictly enforces the 'tl=id' parameter
+    const ttsUrl = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&hl=id&tl=id&q=${encodedText}`;
+
+    const audio = new Audio(ttsUrl);
+    audio.volume = 0.8;
+
+    audio.play().catch((err) => {
+      console.error("Audio playback failed:", err);
+    });
   };
 
   useEffect(() => {
     // 1. Connect to the Go SSE Stream
-    const eventSource = new EventSource(`http://localhost:8080/api/stream/${username}`);
+    const eventSource = new EventSource(
+      `${process.env.NEXT_PUBLIC_API_URL}/stream/${username}`,
+    );
 
     eventSource.addEventListener("donation_alert", (event) => {
       const donation: Donation = JSON.parse(event.data);
-      
+
       // 2. Trigger the Alert UI
       setActiveDonation(donation);
 
       // 3. Trigger Text-to-Speech (TTS)
       triggerTTS(donation);
 
-      // 4. Hide alert after 8 seconds
+      // 4. Hide alert after 8 seconds (adjust this based on how long messages take to read)
       setTimeout(() => {
         setActiveDonation(null);
       }, 8000);
     });
 
+    // Handle connection errors
+    eventSource.onerror = (err) => {
+      console.error("SSE connection error:", err);
+      // EventSource auto-reconnects by default, but you can add custom logic here
+    };
+
     return () => {
       eventSource.close();
+      // Ensure we stop speaking if the component unmounts
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, [username]);
 
-  if (!activeDonation) return <div className="bg-transparent h-screen w-screen" />;
+  // Ensure voices are loaded (Chrome sometimes loads them asynchronously)
+  useEffect(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        // Voices are now loaded, ready for TTS
+      };
+    }
+  }, []);
+
+  if (!activeDonation)
+    return <div className="bg-transparent h-screen w-screen" />;
 
   return (
     <div className="h-screen w-screen bg-transparent flex items-start justify-center p-10">
@@ -59,11 +102,11 @@ export default function OverlayPage({ params }: OverlayProps) {
             {activeDonation.sender_name}
           </h2>
           <p className="text-2xl font-bold text-blue-600 mt-1">
-            Rp {activeDonation.amount.toLocaleString('id-ID')}
+            Rp {activeDonation.amount.toLocaleString("id-ID")}
           </p>
-          
+
           {activeDonation.message && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100 italic text-gray-700 text-lg">
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100 italic text-gray-700 text-lg break-words">
               &quot;{activeDonation.message}&quot;
             </div>
           )}
